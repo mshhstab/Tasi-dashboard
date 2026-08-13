@@ -166,7 +166,14 @@ def html(markup: str) -> None:
 # ==========================================================
 
 def clean_code(raw) -> str:
+    """يحوّل أي صيغة إدخال إلى الرمز الرقمي.
+
+    مهم: قراءة CSV قد تُرجع الرمز كعدد عشري (1150.0). حذف النقطة مباشرةً
+    يُنتج 11500، لذلك نقطع ما بعد النقطة أولاً.
+    """
     s = str(raw).strip().upper().replace("TADAWUL:", "").replace(".SR", "")
+    if "." in s:
+        s = s.split(".")[0]
     digits = "".join(ch for ch in s if ch.isdigit())
     return digits or s
 
