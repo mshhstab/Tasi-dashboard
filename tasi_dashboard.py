@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-لوحة متابعة محفظة السوق السعودي (تداول) — نسخة الجوال.
-التشغيل محلياً:  streamlit run tasi_dashboard.py
+لوحة متابعة محفظة السوق السعودي (تداول) — نسخة الجوال، بدون قائمة جانبية.
 
-ملاحظة فنية مهمة: أي HTML يُمرَّر إلى st.markdown يجب ألا يبدأ سطره بمسافات بادئة،
-لأن Markdown يعتبر أي سطر بمسافتين فأكثر "كتلة كود" فيعرضه كنص خام بدل تنفيذه.
+قراران فنيان مقصودان:
+1) لا يُستخدم st.sidebar إطلاقاً — القائمة الجانبية تتعارض مع اتجاه RTL على
+   شاشات الجوال وتظهر كعمود نص في منتصف الصفحة. كل الأدوات في الصفحة نفسها.
+2) أي HTML يُمرَّر إلى st.markdown يجب ألا يبدأ سطره بمسافات بادئة، وإلا اعتبره
+   Markdown كتلة كود وعرضه كنص خام.
+
+التشغيل محلياً:  streamlit run tasi_dashboard.py
 """
 
 from __future__ import annotations
@@ -32,7 +36,6 @@ st.set_page_config(
     page_title="محفظتي | تداول",
     page_icon="📊",
     layout="centered",
-    initial_sidebar_state="collapsed",
 )
 
 TV_SCREENERS = ["ksa", "saudiarabia", "saudi arabia"]
@@ -82,7 +85,7 @@ SECTOR_COLORS = ["#0E4D64", "#C08A2E", "#1E8E5A", "#8E5A9E", "#C0562B",
 
 
 # ==========================================================
-# التنسيق — لا تُضِف مسافات بادئة داخل هذه الكتلة
+# التنسيق — لا مسافات بادئة داخل هذه الكتلة
 # ==========================================================
 
 CSS = """
@@ -92,20 +95,18 @@ CSS = """
 :root { --ink:#0E1B2C; --sand:#F5F1E8; --brass:#C08A2E;
 --up:#1E8E5A; --down:#C0392B; --muted:#7A8899; }
 
-html, body, [class*="css"], .stApp { direction: rtl; }
-.stApp { background: var(--sand); }
+.stApp { background: var(--sand); direction: rtl; }
 #MainMenu, footer { visibility: hidden; }
+section[data-testid="stSidebar"], button[data-testid="stSidebarCollapsedControl"],
+button[kind="header"] { display: none !important; }
 
 h1,h2,h3,h4,h5,h6,p,div,span,label,li,td,th {
 font-family:'Tajawal','Segoe UI',sans-serif !important; text-align:right;
 }
-h1 { font-size:1.45rem !important; margin-bottom:0 !important; }
+h1 { font-size:1.4rem !important; margin-bottom:0 !important; }
 h3, h4 { font-size:1.05rem !important; }
 
-.block-container { padding:0.8rem 0.9rem 3rem 0.9rem !important; max-width:100% !important; }
-
-section[data-testid="stSidebar"] { background: var(--ink); }
-section[data-testid="stSidebar"] * { color:#E8EEF6 !important; }
+.block-container { padding:3rem 0.9rem 3rem 0.9rem !important; max-width:100% !important; }
 
 div[data-testid="stMetric"] {
 background:#FFF; border:1px solid #E3DCCC; border-right:4px solid var(--brass);
@@ -115,10 +116,12 @@ div[data-testid="stMetricLabel"] p { color:var(--muted) !important; font-size:0.
 div[data-testid="stMetricValue"] { direction:ltr; text-align:right; font-size:1.1rem !important; }
 div[data-testid="stMetricDelta"] { direction:ltr; justify-content:flex-end; font-size:0.85rem !important; }
 
-.stButton button, .stDownloadButton button {
+.stButton button, .stDownloadButton button, .stFormSubmitButton button {
 width:100%; min-height:44px; border-radius:12px; font-weight:700;
 }
 input { min-height:44px !important; font-size:1rem !important; }
+
+details, div[data-testid="stExpander"] { border-radius:12px !important; }
 
 .stTabs [data-baseweb="tab-list"] { flex-direction:row-reverse; gap:4px; }
 .stTabs [data-baseweb="tab"] { padding:8px 14px; font-size:0.95rem; }
@@ -138,8 +141,6 @@ color:var(--muted); margin-top:6px; }
 border:1px solid #E3DCCC; background:#FFF; font-size:1rem; }
 .verdict small { font-weight:400; color:var(--muted); display:block;
 margin-top:6px; font-size:0.8rem; line-height:1.6; }
-.note { font-size:0.78rem; color:var(--muted); border-top:1px dashed #D6CDB8;
-padding-top:8px; margin-top:10px; line-height:1.7; }
 </style>
 """
 
@@ -155,7 +156,7 @@ PLOT_LAYOUT = dict(
 
 
 def html(markup: str) -> None:
-    """يعرض HTML بعد إزالة أي مسافات بادئة قد تجعل Markdown يعامله كنص."""
+    """يعرض HTML بعد تسطيحه لمنع Markdown من معاملته كنص."""
     st.markdown(" ".join(line.strip() for line in markup.strip().splitlines()),
                 unsafe_allow_html=True)
 
@@ -367,43 +368,39 @@ def fundamental_score(d: dict):
 
 
 # ==========================================================
-# إدخال المحفظة
+# أدوات التحكم — كلها في الصفحة الرئيسية
 # ==========================================================
 
-def sidebar() -> str:
+def controls() -> str:
     if "rows" not in st.session_state:
         st.session_state.rows = [dict(r) for r in DEFAULT_ROWS]
 
-    st.sidebar.markdown("## ➕ إضافة سهم")
-    with st.sidebar.form("add", clear_on_submit=True):
-        code = st.text_input("رمز السهم", placeholder="2222")
-        buy = st.number_input("سعر الشراء", min_value=0.0, step=0.05, format="%.2f")
-        qty = st.number_input("عدد الأسهم", min_value=0.0, step=1.0, format="%.0f")
-        submitted = st.form_submit_button("إضافة إلى المحفظة")
-    if submitted:
-        c = clean_code(code)
-        if c and qty > 0:
-            st.session_state.rows.append({"code": c, "buy": float(buy), "qty": float(qty)})
-            st.sidebar.success(f"أُضيف {c}")
-        else:
-            st.sidebar.error("أدخل رمزاً وعدد أسهم أكبر من صفر.")
+    empty = len(st.session_state.rows) == 0
 
-    st.sidebar.markdown("---")
-    label = st.sidebar.selectbox("الإطار الزمني الفني",
-                                 ["يومي", "أسبوعي", "شهري", "4 ساعات"], index=0)
-    interval = {
-        "يومي": Interval.INTERVAL_1_DAY if TV_AVAILABLE else "1d",
-        "أسبوعي": Interval.INTERVAL_1_WEEK if TV_AVAILABLE else "1W",
-        "شهري": Interval.INTERVAL_1_MONTH if TV_AVAILABLE else "1M",
-        "4 ساعات": Interval.INTERVAL_4_HOURS if TV_AVAILABLE else "4h",
-    }[label]
+    with st.expander("➕ إضافة سهم", expanded=empty):
+        with st.form("add", clear_on_submit=True):
+            code = st.text_input("رمز السهم", placeholder="2222")
+            c1, c2 = st.columns(2)
+            buy = c1.number_input("سعر الشراء", min_value=0.0, step=0.05, format="%.2f")
+            qty = c2.number_input("عدد الأسهم", min_value=0.0, step=1.0, format="%.0f")
+            submitted = st.form_submit_button("إضافة إلى المحفظة")
+        if submitted:
+            c = clean_code(code)
+            if c and qty > 0:
+                st.session_state.rows.append({"code": c, "buy": float(buy), "qty": float(qty)})
+                st.rerun()
+            else:
+                st.error("أدخل رمزاً صحيحاً وعدد أسهم أكبر من صفر.")
 
-    if st.sidebar.button("🔄 تحديث الأسعار"):
-        st.cache_data.clear()
-        st.rerun()
+    label = "يومي"
+    with st.expander("⚙️ إعدادات ونسخة احتياطية"):
+        label = st.selectbox("الإطار الزمني للتحليل الفني",
+                             ["يومي", "أسبوعي", "شهري", "4 ساعات"], index=0)
+        if st.button("🔄 تحديث الأسعار"):
+            st.cache_data.clear()
+            st.rerun()
 
-    with st.sidebar.expander("نسخة احتياطية (CSV)"):
-        up = st.file_uploader("استيراد", type=["csv"], label_visibility="collapsed")
+        up = st.file_uploader("استيراد محفظة (CSV)", type=["csv"])
         if up is not None:
             try:
                 df = pd.read_csv(up)
@@ -415,15 +412,23 @@ def sidebar() -> str:
                 st.success("تم الاستيراد")
             except Exception:
                 st.error("الأعمدة المطلوبة: الرمز، سعر الشراء، عدد الأسهم")
+
         if st.session_state.rows:
             out = pd.DataFrame([{"الرمز": r["code"], "سعر الشراء": r["buy"],
                                  "عدد الأسهم": r["qty"]} for r in st.session_state.rows])
-            st.download_button("تصدير", out.to_csv(index=False).encode("utf-8-sig"),
+            st.download_button("تصدير المحفظة (CSV)",
+                               out.to_csv(index=False).encode("utf-8-sig"),
                                "portfolio.csv", "text/csv")
 
-    st.sidebar.caption("البيانات من Yahoo Finance و TradingView (غير رسمية) وقد تكون "
-                       "ناقصة أو متأخرة. أداة متابعة — ليست توصية.")
-    return interval
+        st.caption("البيانات من Yahoo Finance و TradingView (مصادر غير رسمية) وقد تكون "
+                   "ناقصة أو متأخرة لأسهم تداول. أداة متابعة — ليست توصية استثمارية.")
+
+    return {
+        "يومي": Interval.INTERVAL_1_DAY if TV_AVAILABLE else "1d",
+        "أسبوعي": Interval.INTERVAL_1_WEEK if TV_AVAILABLE else "1W",
+        "شهري": Interval.INTERVAL_1_MONTH if TV_AVAILABLE else "1M",
+        "4 ساعات": Interval.INTERVAL_4_HOURS if TV_AVAILABLE else "4h",
+    }.get(label, Interval.INTERVAL_1_DAY if TV_AVAILABLE else "1d")
 
 
 def build_portfolio() -> pd.DataFrame:
@@ -616,12 +621,12 @@ def section_technical(code: str, interval: str) -> None:
 def main() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
     st.title("محفظتي — تداول")
-    st.caption(f"الجلسة: {datetime.now():%Y-%m-%d %H:%M} • اضغط » أعلى الشاشة لإضافة سهم")
+    st.caption(f"الجلسة: {datetime.now():%Y-%m-%d %H:%M}")
 
-    interval = sidebar()
+    interval = controls()
 
     if not st.session_state.rows:
-        st.info("لا توجد أسهم. افتح القائمة (») وأضف سهماً.")
+        st.info("لا توجد أسهم بعد. افتح «➕ إضافة سهم» في الأعلى وأدخل رمزاً مثل 2222.")
         return
 
     with st.spinner("جاري جلب البيانات..."):
