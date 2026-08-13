@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-لوحة تحكم تفاعلية لمتابعة محفظة أسهم السوق السعودي (تداول - TASI)
-التركيز: التحليل الأساسي (Fundamental) + النظرة الفنية من TradingView كعنصر داعم.
+لوحة متابعة محفظة السوق السعودي (تداول) — نسخة مهيأة للجوال.
+التشغيل محلياً:  streamlit run tasi_dashboard.py
 
-التشغيل:
-    streamlit run tasi_dashboard.py
-
-تنبيه: البيانات مصدرها Yahoo Finance و TradingView (غير رسمية) وقد تكون ناقصة
-أو متأخرة لأسهم تداول. تحقق دائماً من موقع تداول / تقارير الشركة قبل أي قرار.
+البيانات من Yahoo Finance و TradingView (مصادر غير رسمية) وقد تكون ناقصة
+أو متأخرة لأسهم تداول. أداة متابعة — ليست توصية استثمارية.
 """
 
 from __future__ import annotations
@@ -17,36 +14,32 @@ from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 import streamlit as st
 import yfinance as yf
 
 try:
     from tradingview_ta import TA_Handler, Interval
     TV_AVAILABLE = True
-except Exception:  # pragma: no cover
+except Exception:
     TV_AVAILABLE = False
 
 
 # ==========================================================
-# 1) إعدادات عامة
+# إعدادات
 # ==========================================================
 
 st.set_page_config(
     page_title="محفظتي | تداول",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered",                 # أنسب لعرض الجوال من wide
+    initial_sidebar_state="collapsed", # الشريط الجانبي درج ينفتح بالضغط
 )
 
-# شاشات TradingView المحتملة للسوق السعودي (تُجرّب بالترتيب)
 TV_SCREENERS = ["ksa", "saudiarabia", "saudi arabia"]
 TV_EXCHANGE = "TADAWUL"
+CACHE_TTL = 900
+PLOT_CONFIG = {"displayModeBar": False, "scrollZoom": False}
 
-CACHE_TTL = 900  # 15 دقيقة
-
-# خريطة مبدئية للأسماء والقطاعات (قابلة للتعديل — راجعها قبل الاعتماد عليها).
-# إذا لم يوجد الرمز هنا يتم الرجوع تلقائياً لبيانات Yahoo Finance.
 TADAWUL_MAP = {
     "1010": ("بنك الرياض", "البنوك"),
     "1020": ("بنك الجزيرة", "البنوك"),
@@ -79,80 +72,76 @@ TADAWUL_MAP = {
     "8210": ("بوبا العربية", "التأمين"),
 }
 
-DEFAULT_PORTFOLIO = pd.DataFrame(
-    [
-        {"الرمز": "2222", "سعر الشراء": 27.5, "عدد الأسهم": 100},
-        {"الرمز": "1120", "سعر الشراء": 78.0, "عدد الأسهم": 50},
-        {"الرمز": "7010", "سعر الشراء": 40.0, "عدد الأسهم": 60},
-    ]
-)
+DEFAULT_ROWS = [
+    {"code": "2222", "buy": 27.5, "qty": 100.0},
+    {"code": "1120", "buy": 78.0, "qty": 50.0},
+]
+
+SECTOR_COLORS = ["#0E4D64", "#C08A2E", "#1E8E5A", "#8E5A9E", "#C0562B",
+                 "#3C7A9E", "#7A8899", "#B03A5B", "#5A8E3C", "#6E5A3C"]
 
 
 # ==========================================================
-# 2) التنسيق (RTL + هوية بصرية)
+# التنسيق — RTL + مقاسات جوال
 # ==========================================================
 
 def inject_css() -> None:
     st.markdown(
         """
         <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&family=IBM+Plex+Sans+Arabic:wght@400;600&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
         <style>
-        :root {
-            --ink:      #0E1B2C;
-            --ink-soft: #1C2E45;
-            --sand:     #F5F1E8;
-            --brass:    #C08A2E;
-            --up:       #1E8E5A;
-            --down:     #C0392B;
-            --muted:    #7A8899;
-        }
+        :root { --ink:#0E1B2C; --sand:#F5F1E8; --brass:#C08A2E;
+                --up:#1E8E5A; --down:#C0392B; --muted:#7A8899; }
 
         html, body, [class*="css"], .stApp { direction: rtl; }
         .stApp { background: var(--sand); }
+        #MainMenu, footer { visibility: hidden; }
 
-        h1, h2, h3, h4, h5, h6, p, div, span, label, li, td, th {
-            font-family: 'Tajawal', 'IBM Plex Sans Arabic', 'Segoe UI', sans-serif !important;
-            text-align: right;
+        h1,h2,h3,h4,h5,h6,p,div,span,label,li,td,th {
+            font-family:'Tajawal','Segoe UI',sans-serif !important; text-align:right;
         }
+        h1 { font-size:1.45rem !important; margin-bottom:0 !important; }
+        h3, h4 { font-size:1.05rem !important; }
 
-        section[data-testid="stSidebar"] {
-            background: var(--ink);
-            direction: rtl;
-        }
-        section[data-testid="stSidebar"] * { color: #E8EEF6 !important; }
+        .block-container { padding: 0.8rem 0.9rem 3rem 0.9rem !important; max-width:100% !important; }
 
-        /* بطاقات المؤشرات */
+        section[data-testid="stSidebar"] { background: var(--ink); }
+        section[data-testid="stSidebar"] * { color:#E8EEF6 !important; }
+
         div[data-testid="stMetric"] {
-            background: #FFFFFF;
-            border: 1px solid #E3DCCC;
-            border-right: 4px solid var(--brass);
-            border-radius: 10px;
-            padding: 14px 16px;
+            background:#FFF; border:1px solid #E3DCCC; border-right:4px solid var(--brass);
+            border-radius:12px; padding:10px 12px;
         }
-        div[data-testid="stMetricLabel"] p { color: var(--muted) !important; font-size: 0.85rem; }
-        div[data-testid="stMetricValue"] { direction: ltr; text-align: right; }
-        div[data-testid="stMetricDelta"] { direction: ltr; justify-content: flex-end; }
+        div[data-testid="stMetricLabel"] p { color:var(--muted) !important; font-size:0.78rem !important; }
+        div[data-testid="stMetricValue"] { direction:ltr; text-align:right; font-size:1.1rem !important; }
+        div[data-testid="stMetricDelta"] { direction:ltr; justify-content:flex-end; font-size:0.85rem !important; }
 
-        .stTabs [data-baseweb="tab-list"] { flex-direction: row-reverse; gap: 6px; }
-        .stDataFrame, .stTable { direction: rtl; }
-
-        .verdict {
-            border-radius: 10px;
-            padding: 14px 18px;
-            font-weight: 700;
-            border: 1px solid #E3DCCC;
-            background: #FFFFFF;
+        .stButton button, .stDownloadButton button {
+            width:100%; min-height:44px; border-radius:12px; font-weight:700;
         }
-        .verdict small { font-weight: 400; color: var(--muted); display: block; margin-top: 6px; }
+        input { min-height:44px !important; font-size:1rem !important; }
 
-        .note {
-            font-size: 0.82rem;
-            color: var(--muted);
-            border-top: 1px dashed #D6CDB8;
-            padding-top: 8px;
-            margin-top: 8px;
-        }
+        .stTabs [data-baseweb="tab-list"] { flex-direction:row-reverse; gap:4px; }
+        .stTabs [data-baseweb="tab"] { padding:8px 14px; font-size:0.95rem; }
+
+        .card { background:#FFF; border:1px solid #E3DCCC; border-radius:12px;
+                padding:12px 14px; margin-bottom:8px; }
+        .card .top { display:flex; justify-content:space-between; align-items:baseline; }
+        .card .nm { font-weight:700; font-size:1rem; color:var(--ink); }
+        .card .cd { color:var(--muted); font-size:0.8rem; direction:ltr; }
+        .card .rw { display:flex; justify-content:space-between; font-size:0.85rem;
+                    color:var(--muted); margin-top:6px; }
+        .card .val { color:var(--ink); direction:ltr; }
+        .pl-up { color:var(--up); font-weight:700; direction:ltr; }
+        .pl-dn { color:var(--down); font-weight:700; direction:ltr; }
+
+        .verdict { border-radius:12px; padding:12px 14px; font-weight:700;
+                   border:1px solid #E3DCCC; background:#FFF; font-size:1rem; }
+        .verdict small { font-weight:400; color:var(--muted); display:block;
+                         margin-top:6px; font-size:0.8rem; line-height:1.6; }
+        .note { font-size:0.78rem; color:var(--muted); border-top:1px dashed #D6CDB8;
+                padding-top:8px; margin-top:10px; line-height:1.7; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -160,27 +149,24 @@ def inject_css() -> None:
 
 
 PLOT_LAYOUT = dict(
-    font=dict(family="Tajawal, Segoe UI, sans-serif", size=13, color="#0E1B2C"),
+    font=dict(family="Tajawal, sans-serif", size=12, color="#0E1B2C"),
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    margin=dict(l=20, r=20, t=50, b=30),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(l=10, r=10, t=30, b=10),
+    height=300,
+    dragmode=False,
+    legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
 )
 
 
 # ==========================================================
-# 3) أدوات مساعدة
+# أدوات
 # ==========================================================
 
-def clean_code(raw: str) -> str:
-    """يحوّل أي صيغة إدخال (1120 / 1120.SR / TADAWUL:1120) إلى الرمز الرقمي."""
-    s = str(raw).strip().upper()
-    s = s.replace("TADAWUL:", "").replace(".SR", "").replace(".SAU", "")
-    return "".join(ch for ch in s if ch.isdigit()) or s
-
-
-def yf_symbol(code: str) -> str:
-    return f"{code}.SR"
+def clean_code(raw) -> str:
+    s = str(raw).strip().upper().replace("TADAWUL:", "").replace(".SR", "")
+    digits = "".join(ch for ch in s if ch.isdigit())
+    return digits or s
 
 
 def is_num(x) -> bool:
@@ -190,18 +176,33 @@ def is_num(x) -> bool:
         return False
 
 
-def fmt(x, digits: int = 2, suffix: str = "", dash: str = "غير متاح") -> str:
-    return f"{float(x):,.{digits}f}{suffix}" if is_num(x) else dash
+def fmt(x, d: int = 2, suffix: str = "", dash: str = "—") -> str:
+    return f"{float(x):,.{d}f}{suffix}" if is_num(x) else dash
+
+
+def money(x, dash: str = "—") -> str:
+    """اختصار الأرقام الكبيرة حتى لا تتكسر على شاشة الجوال."""
+    if not is_num(x):
+        return dash
+    v = float(x)
+    a = abs(v)
+    if a >= 1e9:
+        return f"{v/1e9:,.2f} مليار"
+    if a >= 1e6:
+        return f"{v/1e6:,.2f} مليون"
+    if a >= 1e5:
+        return f"{v/1e3:,.0f} ألف"
+    return f"{v:,.2f}"
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def fetch_stock(code: str) -> dict:
-    """يجلب السعر والنسب الأساسية من Yahoo Finance. يعيد قاموساً بقيم قد تكون None."""
-    sym = yf_symbol(code)
-    out = {"code": code, "symbol": sym, "error": None}
+    sym = f"{code}.SR"
+    nm, sc = TADAWUL_MAP.get(code, (None, None))
+    out = {"code": code, "symbol": sym, "name": nm or code, "sector": sc or "غير مصنف",
+           "price": None, "prev_close": None, "error": None}
     try:
         tk = yf.Ticker(sym)
-        info = {}
         try:
             info = tk.info or {}
         except Exception:
@@ -209,55 +210,42 @@ def fetch_stock(code: str) -> dict:
 
         price = info.get("currentPrice") or info.get("regularMarketPrice")
         prev = info.get("previousClose")
-
         if not is_num(price):
-            hist = tk.history(period="5d")
-            if not hist.empty:
-                price = float(hist["Close"].iloc[-1])
-                if len(hist) > 1:
-                    prev = float(hist["Close"].iloc[-2])
+            h = tk.history(period="5d")
+            if not h.empty:
+                price = float(h["Close"].iloc[-1])
+                if len(h) > 1:
+                    prev = float(h["Close"].iloc[-2])
 
-        # yfinance يعيد عائد التوزيعات أحياناً كنسبة مئوية وأحياناً ككسر عشري
         dy = info.get("dividendYield")
-        if is_num(dy):
-            dy = float(dy) * 100 if float(dy) < 1 else float(dy)
-        else:
-            dy = None
-
+        dy = (float(dy) * 100 if float(dy) < 1 else float(dy)) if is_num(dy) else None
         roe = info.get("returnOnEquity")
         roe = float(roe) * 100 if is_num(roe) else None
+        pm = info.get("profitMargins")
+        pm = float(pm) * 100 if is_num(pm) else None
 
-        name_map, sector_map = TADAWUL_MAP.get(code, (None, None))
-
-        out.update(
-            {
-                "name": name_map or info.get("longName") or info.get("shortName") or code,
-                "sector": sector_map or info.get("sector") or "غير مصنف",
-                "price": float(price) if is_num(price) else None,
-                "prev_close": float(prev) if is_num(prev) else None,
-                "pe": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "pb": info.get("priceToBook"),
-                "dividend_yield": dy,
-                "roe": roe,
-                "eps": info.get("trailingEps"),
-                "market_cap": info.get("marketCap"),
-                "profit_margin": (float(info["profitMargins"]) * 100
-                                  if is_num(info.get("profitMargins")) else None),
-                "debt_to_equity": info.get("debtToEquity"),
-            }
-        )
-    except Exception as exc:  # الشبكة / رمز غير موجود
+        out.update({
+            "name": nm or info.get("longName") or info.get("shortName") or code,
+            "sector": sc or info.get("sector") or "غير مصنف",
+            "price": float(price) if is_num(price) else None,
+            "prev_close": float(prev) if is_num(prev) else None,
+            "pe": info.get("trailingPE"),
+            "forward_pe": info.get("forwardPE"),
+            "pb": info.get("priceToBook"),
+            "dividend_yield": dy,
+            "roe": roe,
+            "eps": info.get("trailingEps"),
+            "market_cap": info.get("marketCap"),
+            "profit_margin": pm,
+        })
+    except Exception as exc:
         out["error"] = str(exc)
-        name_map, sector_map = TADAWUL_MAP.get(code, (code, "غير مصنف"))
-        out.update({"name": name_map, "sector": sector_map, "price": None})
     return out
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def fetch_financials(code: str, quarterly: bool = False) -> pd.DataFrame:
-    """يعيد جدول: الفترة | الإيرادات | صافي الربح (بالريال). فارغ إذا لم تتوفر البيانات."""
-    tk = yf.Ticker(yf_symbol(code))
+    tk = yf.Ticker(f"{code}.SR")
     try:
         stmt = tk.quarterly_income_stmt if quarterly else tk.income_stmt
     except Exception:
@@ -272,46 +260,37 @@ def fetch_financials(code: str, quarterly: bool = False) -> pd.DataFrame:
                     return stmt.loc[idx]
         return None
 
-    revenue = pick(["Total Revenue", "Operating Revenue", "Revenue"])
+    rev = pick(["Total Revenue", "Operating Revenue", "Revenue"])
     net = pick(["Net Income", "Net Income Common Stockholders",
                 "Net Income From Continuing Operation Net Minority Interest"])
-    if revenue is None and net is None:
+    if rev is None and net is None:
         return pd.DataFrame()
 
-    cols = list(stmt.columns)[: 4 if not quarterly else 8]
-    rows = []
-    for c in cols:
-        rows.append(
-            {
-                "الفترة": pd.to_datetime(c).strftime("%Y-%m" if quarterly else "%Y"),
-                "الإيرادات": float(revenue[c]) if revenue is not None and is_num(revenue[c]) else None,
-                "صافي الربح": float(net[c]) if net is not None and is_num(net[c]) else None,
-            }
-        )
+    cols = list(stmt.columns)[: 6 if quarterly else 4]
+    rows = [{
+        "الفترة": pd.to_datetime(c).strftime("%y-%m" if quarterly else "%Y"),
+        "الإيرادات": float(rev[c]) if rev is not None and is_num(rev[c]) else None,
+        "صافي الربح": float(net[c]) if net is not None and is_num(net[c]) else None,
+    } for c in cols]
     return pd.DataFrame(rows).iloc[::-1].reset_index(drop=True)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_tv(code: str, interval: str) -> dict:
-    """التوصية الفنية المجملة من TradingView. يجرب أكثر من اسم screener."""
     if not TV_AVAILABLE:
         return {"error": "مكتبة tradingview_ta غير مثبتة"}
-    last_err = None
+    last = None
     for scr in TV_SCREENERS:
         try:
-            h = TA_Handler(symbol=code, screener=scr, exchange=TV_EXCHANGE, interval=interval)
-            a = h.get_analysis()
-            return {
-                "screener": scr,
-                "summary": a.summary,
-                "oscillators": a.oscillators.get("RECOMMENDATION"),
-                "moving_averages": a.moving_averages.get("RECOMMENDATION"),
-                "indicators": a.indicators,
-                "error": None,
-            }
+            a = TA_Handler(symbol=code, screener=scr, exchange=TV_EXCHANGE,
+                           interval=interval).get_analysis()
+            return {"summary": a.summary,
+                    "oscillators": a.oscillators.get("RECOMMENDATION"),
+                    "moving_averages": a.moving_averages.get("RECOMMENDATION"),
+                    "indicators": a.indicators, "error": None}
         except Exception as exc:
-            last_err = str(exc)
-    return {"error": last_err or "تعذر جلب التحليل الفني"}
+            last = str(exc)
+    return {"error": last or "تعذر جلب التحليل الفني"}
 
 
 TV_AR = {
@@ -324,17 +303,16 @@ TV_AR = {
 
 
 # ==========================================================
-# 4) منطق التقييم الأساسي (نموذج نقاط بسيط وشفاف)
+# التقييم الأساسي
 # ==========================================================
 
-def fundamental_score(d: dict) -> tuple[str, str, list[str]]:
-    """يعيد (التقييم، اللون، أسباب). قواعد إرشادية عامة — عدّل العتبات حسب القطاع."""
+def fundamental_score(d: dict):
     score, reasons = 0, []
 
     pe = d.get("pe")
     if is_num(pe):
         if pe <= 0:
-            score -= 2; reasons.append(f"مكرر ربحية سالب ({fmt(pe)}) — الشركة خاسرة")
+            score -= 2; reasons.append(f"مكرر ربحية سالب ({fmt(pe)}) — خسائر")
         elif pe < 12:
             score += 2; reasons.append(f"مكرر ربحية منخفض ({fmt(pe)})")
         elif pe < 20:
@@ -349,33 +327,33 @@ def fundamental_score(d: dict) -> tuple[str, str, list[str]]:
     pb = d.get("pb")
     if is_num(pb):
         if pb < 1.5:
-            score += 2; reasons.append(f"مضاعف القيمة الدفترية منخفض ({fmt(pb)})")
+            score += 2; reasons.append(f"مضاعف دفتري منخفض ({fmt(pb)})")
         elif pb < 3:
-            score += 1; reasons.append(f"مضاعف القيمة الدفترية معتدل ({fmt(pb)})")
+            score += 1; reasons.append(f"مضاعف دفتري معتدل ({fmt(pb)})")
         elif pb < 5:
-            reasons.append(f"مضاعف القيمة الدفترية مرتفع ({fmt(pb)})")
+            reasons.append(f"مضاعف دفتري مرتفع ({fmt(pb)})")
         else:
-            score -= 1; reasons.append(f"مضاعف القيمة الدفترية مرتفع جداً ({fmt(pb)})")
+            score -= 1; reasons.append(f"مضاعف دفتري مرتفع جداً ({fmt(pb)})")
 
     roe = d.get("roe")
     if is_num(roe):
         if roe >= 18:
-            score += 2; reasons.append(f"عائد قوي على حقوق المساهمين ({fmt(roe, 1, '%')})")
+            score += 2; reasons.append(f"عائد قوي على حقوق المساهمين ({fmt(roe,1,'%')})")
         elif roe >= 10:
-            score += 1; reasons.append(f"عائد مقبول على حقوق المساهمين ({fmt(roe, 1, '%')})")
+            score += 1; reasons.append(f"عائد مقبول على حقوق المساهمين ({fmt(roe,1,'%')})")
         elif roe > 0:
-            reasons.append(f"عائد ضعيف على حقوق المساهمين ({fmt(roe, 1, '%')})")
+            reasons.append(f"عائد ضعيف على حقوق المساهمين ({fmt(roe,1,'%')})")
         else:
             score -= 2; reasons.append("عائد سالب على حقوق المساهمين")
 
     dy = d.get("dividend_yield")
     if is_num(dy):
         if dy >= 5:
-            score += 2; reasons.append(f"عائد توزيعات مرتفع ({fmt(dy, 2, '%')})")
+            score += 2; reasons.append(f"توزيعات مرتفعة ({fmt(dy,2,'%')})")
         elif dy >= 3:
-            score += 1; reasons.append(f"عائد توزيعات جيد ({fmt(dy, 2, '%')})")
+            score += 1; reasons.append(f"توزيعات جيدة ({fmt(dy,2,'%')})")
         elif dy > 0:
-            reasons.append(f"عائد توزيعات متواضع ({fmt(dy, 2, '%')})")
+            reasons.append(f"توزيعات متواضعة ({fmt(dy,2,'%')})")
 
     if score >= 5:
         return "قيمة جاذبة", "#1E8E5A", reasons
@@ -389,325 +367,291 @@ def fundamental_score(d: dict) -> tuple[str, str, list[str]]:
 
 
 # ==========================================================
-# 5) الشريط الجانبي — إدخال المحفظة
+# إدخال المحفظة
 # ==========================================================
 
-def sidebar() -> tuple[pd.DataFrame, str]:
-    st.sidebar.markdown("## 💼 محفظتي")
-    st.sidebar.caption("أدخل الرمز الرقمي للسهم (مثال: 2222) أو 2222.SR")
+def sidebar() -> str:
+    if "rows" not in st.session_state:
+        st.session_state.rows = [dict(r) for r in DEFAULT_ROWS]
 
-    if "portfolio" not in st.session_state:
-        st.session_state.portfolio = DEFAULT_PORTFOLIO.copy()
-
-    up = st.sidebar.file_uploader("استيراد محفظة (CSV)", type=["csv"])
-    if up is not None:
-        try:
-            df = pd.read_csv(up)
-            if {"الرمز", "سعر الشراء", "عدد الأسهم"}.issubset(df.columns):
-                st.session_state.portfolio = df
-                st.sidebar.success("تم استيراد الملف")
-            else:
-                st.sidebar.error("الأعمدة المطلوبة: الرمز، سعر الشراء، عدد الأسهم")
-        except Exception as exc:
-            st.sidebar.error(f"تعذّر قراءة الملف: {exc}")
-
-    edited = st.sidebar.data_editor(
-        st.session_state.portfolio,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor",
-        column_config={
-            "الرمز": st.column_config.TextColumn("الرمز", required=True),
-            "سعر الشراء": st.column_config.NumberColumn("سعر الشراء", min_value=0.0, step=0.05, format="%.2f"),
-            "عدد الأسهم": st.column_config.NumberColumn("عدد الأسهم", min_value=0, step=1),
-        },
-    )
-    st.session_state.portfolio = edited
-
-    st.sidebar.download_button(
-        "تصدير المحفظة (CSV)",
-        edited.to_csv(index=False).encode("utf-8-sig"),
-        file_name="portfolio.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
+    st.sidebar.markdown("## ➕ إضافة سهم")
+    with st.sidebar.form("add", clear_on_submit=True):
+        code = st.text_input("رمز السهم", placeholder="2222")
+        buy = st.number_input("سعر الشراء", min_value=0.0, step=0.05, format="%.2f")
+        qty = st.number_input("عدد الأسهم", min_value=0.0, step=1.0, format="%.0f")
+        submitted = st.form_submit_button("إضافة إلى المحفظة")
+    if submitted:
+        c = clean_code(code)
+        if c and qty > 0:
+            st.session_state.rows.append({"code": c, "buy": float(buy), "qty": float(qty)})
+            st.sidebar.success(f"أُضيف {c}")
+        else:
+            st.sidebar.error("أدخل رمزاً وعدد أسهم أكبر من صفر.")
 
     st.sidebar.markdown("---")
-    interval_label = st.sidebar.selectbox(
-        "الإطار الزمني للتحليل الفني",
-        ["يومي", "أسبوعي", "شهري", "4 ساعات", "ساعة"],
-        index=0,
-    )
+    label = st.sidebar.selectbox("الإطار الزمني الفني",
+                                 ["يومي", "أسبوعي", "شهري", "4 ساعات"], index=0)
     interval = {
         "يومي": Interval.INTERVAL_1_DAY if TV_AVAILABLE else "1d",
         "أسبوعي": Interval.INTERVAL_1_WEEK if TV_AVAILABLE else "1W",
         "شهري": Interval.INTERVAL_1_MONTH if TV_AVAILABLE else "1M",
         "4 ساعات": Interval.INTERVAL_4_HOURS if TV_AVAILABLE else "4h",
-        "ساعة": Interval.INTERVAL_1_HOUR if TV_AVAILABLE else "1h",
-    }[interval_label]
+    }[label]
 
-    if st.sidebar.button("🔄 تحديث البيانات", use_container_width=True):
+    if st.sidebar.button("🔄 تحديث الأسعار"):
         st.cache_data.clear()
         st.rerun()
 
+    with st.sidebar.expander("نسخة احتياطية (CSV)"):
+        up = st.file_uploader("استيراد", type=["csv"], label_visibility="collapsed")
+        if up is not None:
+            try:
+                df = pd.read_csv(up)
+                st.session_state.rows = [
+                    {"code": clean_code(r["الرمز"]), "buy": float(r["سعر الشراء"]),
+                     "qty": float(r["عدد الأسهم"])}
+                    for _, r in df.iterrows()
+                ]
+                st.success("تم الاستيراد")
+            except Exception:
+                st.error("الأعمدة المطلوبة: الرمز، سعر الشراء، عدد الأسهم")
+        if st.session_state.rows:
+            out = pd.DataFrame([{"الرمز": r["code"], "سعر الشراء": r["buy"],
+                                 "عدد الأسهم": r["qty"]} for r in st.session_state.rows])
+            st.download_button("تصدير", out.to_csv(index=False).encode("utf-8-sig"),
+                               "portfolio.csv", "text/csv")
+
     st.sidebar.markdown(
-        "<div class='note'>البيانات من Yahoo Finance و TradingView (مصادر غير رسمية). "
-        "قد تكون ناقصة أو متأخرة لأسهم تداول. هذه اللوحة أداة متابعة وليست توصية استثمارية.</div>",
-        unsafe_allow_html=True,
-    )
-    return edited, interval
+        "<div class='note'>البيانات من Yahoo Finance و TradingView (غير رسمية) "
+        "وقد تكون ناقصة أو متأخرة. أداة متابعة — ليست توصية.</div>",
+        unsafe_allow_html=True)
+    return interval
 
 
-# ==========================================================
-# 6) بناء بيانات المحفظة
-# ==========================================================
-
-def build_portfolio(df: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for _, r in df.iterrows():
-        code = clean_code(r.get("الرمز", ""))
+def build_portfolio() -> pd.DataFrame:
+    recs = []
+    for i, r in enumerate(st.session_state.rows):
+        code = clean_code(r["code"])
         if not code:
             continue
-        try:
-            qty = float(r.get("عدد الأسهم") or 0)
-            buy = float(r.get("سعر الشراء") or 0)
-        except (TypeError, ValueError):
-            continue
-
         d = fetch_stock(code)
-        price = d.get("price")
+        price, qty, buy = d.get("price"), float(r["qty"]), float(r["buy"])
         cost = buy * qty
         value = price * qty if is_num(price) else None
         pl = value - cost if value is not None else None
-
-        rows.append(
-            {
-                "الرمز": code,
-                "الشركة": d.get("name"),
-                "القطاع": d.get("sector"),
-                "عدد الأسهم": qty,
-                "سعر الشراء": buy,
-                "السعر الحالي": price,
-                "التكلفة": cost,
-                "القيمة الحالية": value,
-                "الربح/الخسارة": pl,
-                "العائد %": (pl / cost * 100) if (pl is not None and cost > 0) else None,
-                "مكرر الربحية": d.get("pe"),
-                "القيمة الدفترية": d.get("pb"),
-                "عائد التوزيعات %": d.get("dividend_yield"),
-                "العائد على حقوق المساهمين %": d.get("roe"),
-            }
-        )
-    return pd.DataFrame(rows)
+        recs.append({
+            "i": i, "code": code, "name": d["name"], "sector": d["sector"],
+            "qty": qty, "buy": buy, "price": price, "cost": cost,
+            "value": value, "pl": pl,
+            "pct": (pl / cost * 100) if (pl is not None and cost > 0) else None,
+        })
+    return pd.DataFrame(recs)
 
 
 # ==========================================================
-# 7) الأقسام
+# الأقسام
 # ==========================================================
 
 def section_overview(pf: pd.DataFrame) -> None:
-    st.subheader("أولاً: ملخص المحفظة")
-
-    total_cost = pf["التكلفة"].sum()
-    total_value = pf["القيمة الحالية"].sum(skipna=True)
+    total_cost = float(pf["cost"].sum())
+    total_value = float(pf["value"].sum(skipna=True))
     pl = total_value - total_cost
-    pl_pct = (pl / total_cost * 100) if total_cost else 0
-    missing = int(pf["السعر الحالي"].isna().sum())
+    pct = (pl / total_cost * 100) if total_cost else 0.0
+    missing = int(pf["price"].isna().sum())
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("القيمة السوقية الحالية", f"{total_value:,.2f} ر.س")
-    c2.metric("إجمالي التكلفة", f"{total_cost:,.2f} ر.س")
-    c3.metric("الربح / الخسارة", f"{pl:,.2f} ر.س", f"{pl_pct:+.2f}%")
-    c4.metric("عدد الشركات", f"{len(pf)}")
+    a, b = st.columns(2)
+    a.metric("القيمة الحالية", f"{money(total_value)} ر.س")
+    b.metric("التكلفة", f"{money(total_cost)} ر.س")
+    c, e = st.columns(2)
+    c.metric("الربح / الخسارة", f"{money(pl)} ر.س", f"{pct:+.2f}%")
+    e.metric("عدد الشركات", f"{len(pf)}")
 
     if missing:
-        st.warning(f"تعذّر جلب السعر الحالي لـ {missing} من الأسهم — استُثنيت من القيمة السوقية.")
+        st.warning(f"تعذّر جلب سعر {missing} من الأسهم — استُثنيت من القيمة.")
 
-    left, right = st.columns([1, 1])
+    st.markdown("### أسهمي")
+    for _, r in pf.iterrows():
+        cls = "pl-up" if (r["pl"] is not None and not pd.isna(r["pl"]) and r["pl"] >= 0) else "pl-dn"
+        pl_txt = (f"{r['pl']:+,.0f} ر.س ({r['pct']:+.1f}%)"
+                  if r["pl"] is not None and not pd.isna(r["pl"]) else "غير متاح")
+        st.markdown(
+            f"""<div class="card">
+              <div class="top">
+                <span class="nm">{r['name']}</span>
+                <span class="cd">{r['code']}</span>
+              </div>
+              <div class="rw"><span>السعر الحالي</span>
+                   <span class="val">{fmt(r['price'])} ر.س</span></div>
+              <div class="rw"><span>الشراء × الكمية</span>
+                   <span class="val">{r['buy']:,.2f} × {r['qty']:,.0f}</span></div>
+              <div class="rw"><span>القيمة</span>
+                   <span class="val">{money(r['value'])} ر.س</span></div>
+              <div class="rw"><span>الربح / الخسارة</span>
+                   <span class="{cls}">{pl_txt}</span></div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        if st.button("حذف", key=f"del_{r['i']}_{r['code']}"):
+            st.session_state.rows.pop(int(r["i"]))
+            st.rerun()
 
-    with left:
-        sec = (pf.dropna(subset=["القيمة الحالية"])
-                 .groupby("القطاع", as_index=False)["القيمة الحالية"].sum()
-                 .sort_values("القيمة الحالية", ascending=False))
-        if not sec.empty:
-            fig = px.pie(sec, values="القيمة الحالية", names="القطاع", hole=0.55,
-                         color_discrete_sequence=px.colors.sequential.Aggrnyl)
-            fig.update_traces(textposition="inside", texttemplate="%{label}<br>%{percent}")
-            fig.update_layout(title="التوزيع القطاعي", **PLOT_LAYOUT)
-            st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        d = pf.dropna(subset=["الربح/الخسارة"]).sort_values("الربح/الخسارة")
-        if not d.empty:
-            fig = go.Figure(go.Bar(
-                x=d["الربح/الخسارة"], y=d["الشركة"], orientation="h",
-                marker_color=["#C0392B" if v < 0 else "#1E8E5A" for v in d["الربح/الخسارة"]],
-                text=[f"{v:,.0f}" for v in d["الربح/الخسارة"]], textposition="auto",
-            ))
-            fig.update_layout(title="الربح / الخسارة لكل سهم (ر.س)", **PLOT_LAYOUT)
-            st.plotly_chart(fig, use_container_width=True)
-
-    show = pf.copy()
-    st.dataframe(
-        show.style.format({
-            "سعر الشراء": "{:,.2f}", "السعر الحالي": "{:,.2f}",
-            "التكلفة": "{:,.2f}", "القيمة الحالية": "{:,.2f}",
-            "الربح/الخسارة": "{:,.2f}", "العائد %": "{:+.2f}",
-            "مكرر الربحية": "{:,.2f}", "القيمة الدفترية": "{:,.2f}",
-            "عائد التوزيعات %": "{:,.2f}", "العائد على حقوق المساهمين %": "{:,.2f}",
-            "عدد الأسهم": "{:,.0f}",
-        }, na_rep="—"),
-        use_container_width=True,
-    )
+    sec = (pf.dropna(subset=["value"]).groupby("sector", as_index=False)["value"].sum()
+             .sort_values("value", ascending=False))
+    if not sec.empty:
+        st.markdown("### التوزيع القطاعي")
+        fig = go.Figure(go.Pie(
+            labels=sec["sector"], values=sec["value"], hole=0.55,
+            marker=dict(colors=SECTOR_COLORS[: len(sec)]),
+            textinfo="percent", textposition="inside",
+            hovertemplate="%{label}: %{percent}<extra></extra>",
+        ))
+        fig.update_layout(**PLOT_LAYOUT)
+        st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
 
 def section_fundamentals(d: dict) -> None:
-    st.subheader("ثانياً: بطاقة التحليل الأساسي")
+    st.markdown("### التحليل الأساسي")
+    a, b = st.columns(2)
+    a.metric("مكرر الربحية P/E", fmt(d.get("pe")))
+    b.metric("المضاعف الدفتري P/B", fmt(d.get("pb")))
+    c, e = st.columns(2)
+    c.metric("عائد التوزيعات", fmt(d.get("dividend_yield"), 2, "%"))
+    e.metric("العائد على حقوق المساهمين", fmt(d.get("roe"), 1, "%"))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("مكرر الربحية P/E", fmt(d.get("pe")))
-    c2.metric("مضاعف القيمة الدفترية P/B", fmt(d.get("pb")))
-    c3.metric("عائد التوزيعات", fmt(d.get("dividend_yield"), 2, "%"))
-    c4.metric("العائد على حقوق المساهمين ROE", fmt(d.get("roe"), 1, "%"))
-
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("ربحية السهم EPS", fmt(d.get("eps")))
-    mc = d.get("market_cap")
-    c6.metric("القيمة السوقية", f"{mc/1e9:,.2f} مليار ر.س" if is_num(mc) else "غير متاح")
-    c7.metric("هامش صافي الربح", fmt(d.get("profit_margin"), 1, "%"))
-    c8.metric("مكرر الربحية المتوقع", fmt(d.get("forward_pe")))
+    with st.expander("مؤشرات إضافية"):
+        f, g = st.columns(2)
+        f.metric("ربحية السهم EPS", fmt(d.get("eps")))
+        mc = d.get("market_cap")
+        g.metric("القيمة السوقية", f"{money(mc)} ر.س" if is_num(mc) else "—")
+        h, k = st.columns(2)
+        h.metric("هامش صافي الربح", fmt(d.get("profit_margin"), 1, "%"))
+        k.metric("المكرر المتوقع", fmt(d.get("forward_pe")))
 
     verdict, color, reasons = fundamental_score(d)
     st.markdown(
         f"<div class='verdict' style='border-right:6px solid {color}; color:{color}'>"
-        f"التقييم الملخص: {verdict}"
-        f"<small>{' • '.join(reasons) if reasons else 'لا توجد بيانات كافية'}</small>"
-        f"<small>نموذج نقاط إرشادي مبني على العتبات المعرّفة في الكود — ليس توصية.</small>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+        f"التقييم: {verdict}"
+        f"<small>{' • '.join(reasons) if reasons else 'بيانات غير كافية'}</small>"
+        f"<small>نموذج نقاط إرشادي بعتبات ثابتة — ليس توصية.</small></div>",
+        unsafe_allow_html=True)
 
 
 def section_financials(code: str) -> None:
-    st.subheader("ثالثاً: أداء القوائم المالية")
-    mode = st.radio("الفترة", ["سنوي (4 سنوات)", "ربع سنوي"], horizontal=True,
-                    key=f"fin_{code}", label_visibility="collapsed")
-    df = fetch_financials(code, quarterly=mode.startswith("ربع"))
+    st.markdown("### القوائم المالية")
+    q = st.toggle("عرض ربع سنوي", key=f"q_{code}")
+    df = fetch_financials(code, quarterly=q)
 
     if df.empty or df[["الإيرادات", "صافي الربح"]].isna().all().all():
         st.info("القوائم المالية غير متاحة لهذا الرمز عبر Yahoo Finance. راجع تقارير الشركة على موقع تداول.")
         return
 
-    scale, unit = 1e9, "مليار ر.س"
     fig = go.Figure()
-    fig.add_bar(name="الإيرادات", x=df["الفترة"], y=df["الإيرادات"] / scale,
-                marker_color="#1C2E45", text=(df["الإيرادات"] / scale).round(2), textposition="outside")
-    fig.add_bar(name="صافي الربح", x=df["الفترة"], y=df["صافي الربح"] / scale,
-                marker_color="#C08A2E", text=(df["صافي الربح"] / scale).round(2), textposition="outside")
-    fig.update_layout(barmode="group", title=f"الإيرادات وصافي الربح ({unit})",
-                      yaxis_title=unit, **PLOT_LAYOUT)
-    st.plotly_chart(fig, use_container_width=True)
+    fig.add_bar(name="الإيرادات", x=df["الفترة"], y=df["الإيرادات"] / 1e9, marker_color="#0E4D64")
+    fig.add_bar(name="صافي الربح", x=df["الفترة"], y=df["صافي الربح"] / 1e9, marker_color="#C08A2E")
+    fig.update_layout(barmode="group", yaxis_title="مليار ر.س", **PLOT_LAYOUT)
+    st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     g = df.copy()
-    g["نمو الإيرادات %"] = g["الإيرادات"].pct_change() * 100
-    g["نمو صافي الربح %"] = g["صافي الربح"].pct_change() * 100
-    g["هامش صافي الربح %"] = g["صافي الربح"] / g["الإيرادات"] * 100
-    st.dataframe(
-        g.style.format({
-            "الإيرادات": "{:,.0f}", "صافي الربح": "{:,.0f}",
-            "نمو الإيرادات %": "{:+.1f}", "نمو صافي الربح %": "{:+.1f}",
-            "هامش صافي الربح %": "{:.1f}",
-        }, na_rep="—"),
-        use_container_width=True,
-    )
+    g["نمو الإيرادات"] = g["الإيرادات"].pct_change() * 100
+    g["نمو الأرباح"] = g["صافي الربح"].pct_change() * 100
+    for _, r in g.iloc[::-1].iterrows():
+        st.markdown(
+            f"""<div class="card">
+              <div class="top"><span class="nm">{r['الفترة']}</span></div>
+              <div class="rw"><span>الإيرادات</span><span class="val">{money(r['الإيرادات'])}</span></div>
+              <div class="rw"><span>صافي الربح</span><span class="val">{money(r['صافي الربح'])}</span></div>
+              <div class="rw"><span>نمو الإيرادات / الأرباح</span>
+                <span class="val">{fmt(r['نمو الإيرادات'],1,'%')} / {fmt(r['نمو الأرباح'],1,'%')}</span></div>
+            </div>""", unsafe_allow_html=True)
 
 
 def section_technical(code: str, interval: str) -> None:
-    st.subheader("رابعاً: النظرة الفنية المجملة (TradingView)")
+    st.markdown("### النظرة الفنية (TradingView)")
     tv = fetch_tv(code, interval)
-
     if tv.get("error"):
         st.info(f"تعذّر جلب التحليل الفني: {tv['error']}")
         return
 
-    summary = tv["summary"]
-    rec = summary.get("RECOMMENDATION", "NEUTRAL")
-    label, color = TV_AR.get(rec, (rec, "#7A8899"))
+    s = tv["summary"]
+    label, color = TV_AR.get(s.get("RECOMMENDATION", "NEUTRAL"), ("—", "#7A8899"))
+    st.markdown(
+        f"<div class='verdict' style='border-right:6px solid {color}; color:{color}; font-size:1.15rem'>"
+        f"التوصية الفنية: {label}"
+        f"<small>شراء {s.get('BUY',0)} • حياد {s.get('NEUTRAL',0)} • بيع {s.get('SELL',0)}</small></div>",
+        unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1.2, 1, 1])
-    with c1:
-        st.markdown(
-            f"<div class='verdict' style='border-right:6px solid {color}; color:{color}; font-size:1.25rem'>"
-            f"التوصية الفنية: {label}"
-            f"<small>مؤشرات شراء: {summary.get('BUY', 0)} • حياد: {summary.get('NEUTRAL', 0)} • بيع: {summary.get('SELL', 0)}</small>"
-            f"</div>", unsafe_allow_html=True)
-    c2.metric("المذبذبات Oscillators", TV_AR.get(tv.get("oscillators"), (tv.get("oscillators") or "—", ""))[0])
-    c3.metric("المتوسطات المتحركة", TV_AR.get(tv.get("moving_averages"), (tv.get("moving_averages") or "—", ""))[0])
+    a, b = st.columns(2)
+    a.metric("المذبذبات", TV_AR.get(tv.get("oscillators"), ("—", ""))[0])
+    b.metric("المتوسطات", TV_AR.get(tv.get("moving_averages"), ("—", ""))[0])
 
     fig = go.Figure(go.Bar(
-        x=["شراء", "حياد", "بيع"],
-        y=[summary.get("BUY", 0), summary.get("NEUTRAL", 0), summary.get("SELL", 0)],
+        x=[s.get("BUY", 0), s.get("NEUTRAL", 0), s.get("SELL", 0)],
+        y=["شراء", "حياد", "بيع"], orientation="h",
         marker_color=["#1E8E5A", "#7A8899", "#C0392B"],
-        text=[summary.get("BUY", 0), summary.get("NEUTRAL", 0), summary.get("SELL", 0)],
-        textposition="outside",
-    ))
-    fig.update_layout(title="توزيع إشارات المؤشرات الفنية", **PLOT_LAYOUT)
-    st.plotly_chart(fig, use_container_width=True)
+        text=[s.get("BUY", 0), s.get("NEUTRAL", 0), s.get("SELL", 0)], textposition="auto"))
+    layout = dict(PLOT_LAYOUT)
+    layout["height"] = 220
+    layout["showlegend"] = False
+    fig.update_layout(**layout)
+    st.plotly_chart(fig, use_container_width=True, config=PLOT_CONFIG)
 
     ind = tv.get("indicators") or {}
-    keys = {"RSI": "مؤشر القوة النسبية RSI", "Stoch.K": "ستوكاستك %K",
-            "MACD.macd": "MACD", "EMA50": "متوسط EMA50", "SMA200": "متوسط SMA200"}
+    keys = {"RSI": "القوة النسبية RSI", "MACD.macd": "MACD",
+            "EMA50": "متوسط EMA50", "SMA200": "متوسط SMA200"}
     picked = {v: ind.get(k) for k, v in keys.items() if is_num(ind.get(k))}
     if picked:
-        st.dataframe(pd.DataFrame([picked]).T.rename(columns={0: "القيمة"}).style.format("{:,.2f}"),
-                     use_container_width=True)
+        with st.expander("مؤشرات فنية"):
+            for k, v in picked.items():
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;font-size:0.9rem'>"
+                    f"<span>{k}</span><span style='direction:ltr'>{fmt(v)}</span></div>",
+                    unsafe_allow_html=True)
 
-    st.markdown("<div class='note'>التحليل الفني هنا عنصر توقيت داعم فقط — القرار مبني على التحليل الأساسي.</div>",
+    st.markdown("<div class='note'>التحليل الفني عنصر توقيت داعم فقط — القرار مبني على التحليل الأساسي.</div>",
                 unsafe_allow_html=True)
 
 
 # ==========================================================
-# 8) التشغيل
+# التشغيل
 # ==========================================================
 
 def main() -> None:
     inject_css()
-    st.title("لوحة متابعة محفظة السوق السعودي (تداول)")
-    st.caption(f"آخر تحديث للجلسة: {datetime.now():%Y-%m-%d %H:%M}")
+    st.title("محفظتي — تداول")
+    st.caption(f"الجلسة: {datetime.now():%Y-%m-%d %H:%M} • اضغط » أعلى الشاشة لإضافة سهم")
 
-    df_in, interval = sidebar()
-    if df_in.empty:
-        st.info("أضف أسهمك من الشريط الجانبي للبدء.")
+    interval = sidebar()
+
+    if not st.session_state.rows:
+        st.info("لا توجد أسهم. افتح القائمة (») وأضف سهماً.")
         return
 
     with st.spinner("جاري جلب البيانات..."):
-        pf = build_portfolio(df_in)
+        pf = build_portfolio()
 
     if pf.empty:
         st.error("لا توجد رموز صالحة. استخدم الرمز الرقمي مثل 2222.")
         return
 
-    tab1, tab2 = st.tabs(["ملخص المحفظة", "تحليل سهم"])
+    t1, t2 = st.tabs(["المحفظة", "تحليل سهم"])
 
-    with tab1:
+    with t1:
         section_overview(pf)
 
-    with tab2:
-        options = pf["الرمز"].tolist()
-        labels = {r["الرمز"]: f"{r['الرمز']} — {r['الشركة']}" for _, r in pf.iterrows()}
-        code = st.selectbox("اختر السهم", options, format_func=lambda c: labels.get(c, c))
+    with t2:
+        codes = pf["code"].tolist()
+        labels = dict(zip(pf["code"], pf["name"]))
+        code = st.selectbox("السهم", codes, format_func=lambda c: f"{labels.get(c, c)} ({c})")
         d = fetch_stock(code)
 
         price, prev = d.get("price"), d.get("prev_close")
         chg = ((price - prev) / prev * 100) if (is_num(price) and is_num(prev) and prev) else None
-        st.markdown(f"### {d.get('name')} — {d.get('sector')}")
-        st.metric("السعر الحالي", fmt(price, 2, " ر.س"), f"{chg:+.2f}%" if chg is not None else None)
+        st.markdown(f"#### {d['name']} — {d['sector']}")
+        st.metric("السعر الحالي", f"{fmt(price)} ر.س",
+                  f"{chg:+.2f}%" if chg is not None else None)
 
-        st.divider()
         section_fundamentals(d)
-        st.divider()
         section_financials(code)
-        st.divider()
         section_technical(code, interval)
 
 
