@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-لوحة متابعة محفظة السوق السعودي (تداول) — نسخة مهيأة للجوال.
+لوحة متابعة محفظة السوق السعودي (تداول) — نسخة الجوال.
 التشغيل محلياً:  streamlit run tasi_dashboard.py
 
-البيانات من Yahoo Finance و TradingView (مصادر غير رسمية) وقد تكون ناقصة
-أو متأخرة لأسهم تداول. أداة متابعة — ليست توصية استثمارية.
+ملاحظة فنية مهمة: أي HTML يُمرَّر إلى st.markdown يجب ألا يبدأ سطره بمسافات بادئة،
+لأن Markdown يعتبر أي سطر بمسافتين فأكثر "كتلة كود" فيعرضه كنص خام بدل تنفيذه.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ except Exception:
 st.set_page_config(
     page_title="محفظتي | تداول",
     page_icon="📊",
-    layout="centered",                 # أنسب لعرض الجوال من wide
-    initial_sidebar_state="collapsed", # الشريط الجانبي درج ينفتح بالضغط
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
 TV_SCREENERS = ["ksa", "saudiarabia", "saudi arabia"]
@@ -82,71 +82,66 @@ SECTOR_COLORS = ["#0E4D64", "#C08A2E", "#1E8E5A", "#8E5A9E", "#C0562B",
 
 
 # ==========================================================
-# التنسيق — RTL + مقاسات جوال
+# التنسيق — لا تُضِف مسافات بادئة داخل هذه الكتلة
 # ==========================================================
 
-def inject_css() -> None:
-    st.markdown(
-        """
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
-        <style>
-        :root { --ink:#0E1B2C; --sand:#F5F1E8; --brass:#C08A2E;
-                --up:#1E8E5A; --down:#C0392B; --muted:#7A8899; }
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
 
-        html, body, [class*="css"], .stApp { direction: rtl; }
-        .stApp { background: var(--sand); }
-        #MainMenu, footer { visibility: hidden; }
+:root { --ink:#0E1B2C; --sand:#F5F1E8; --brass:#C08A2E;
+--up:#1E8E5A; --down:#C0392B; --muted:#7A8899; }
 
-        h1,h2,h3,h4,h5,h6,p,div,span,label,li,td,th {
-            font-family:'Tajawal','Segoe UI',sans-serif !important; text-align:right;
-        }
-        h1 { font-size:1.45rem !important; margin-bottom:0 !important; }
-        h3, h4 { font-size:1.05rem !important; }
+html, body, [class*="css"], .stApp { direction: rtl; }
+.stApp { background: var(--sand); }
+#MainMenu, footer { visibility: hidden; }
 
-        .block-container { padding: 0.8rem 0.9rem 3rem 0.9rem !important; max-width:100% !important; }
+h1,h2,h3,h4,h5,h6,p,div,span,label,li,td,th {
+font-family:'Tajawal','Segoe UI',sans-serif !important; text-align:right;
+}
+h1 { font-size:1.45rem !important; margin-bottom:0 !important; }
+h3, h4 { font-size:1.05rem !important; }
 
-        section[data-testid="stSidebar"] { background: var(--ink); }
-        section[data-testid="stSidebar"] * { color:#E8EEF6 !important; }
+.block-container { padding:0.8rem 0.9rem 3rem 0.9rem !important; max-width:100% !important; }
 
-        div[data-testid="stMetric"] {
-            background:#FFF; border:1px solid #E3DCCC; border-right:4px solid var(--brass);
-            border-radius:12px; padding:10px 12px;
-        }
-        div[data-testid="stMetricLabel"] p { color:var(--muted) !important; font-size:0.78rem !important; }
-        div[data-testid="stMetricValue"] { direction:ltr; text-align:right; font-size:1.1rem !important; }
-        div[data-testid="stMetricDelta"] { direction:ltr; justify-content:flex-end; font-size:0.85rem !important; }
+section[data-testid="stSidebar"] { background: var(--ink); }
+section[data-testid="stSidebar"] * { color:#E8EEF6 !important; }
 
-        .stButton button, .stDownloadButton button {
-            width:100%; min-height:44px; border-radius:12px; font-weight:700;
-        }
-        input { min-height:44px !important; font-size:1rem !important; }
+div[data-testid="stMetric"] {
+background:#FFF; border:1px solid #E3DCCC; border-right:4px solid var(--brass);
+border-radius:12px; padding:10px 12px;
+}
+div[data-testid="stMetricLabel"] p { color:var(--muted) !important; font-size:0.78rem !important; }
+div[data-testid="stMetricValue"] { direction:ltr; text-align:right; font-size:1.1rem !important; }
+div[data-testid="stMetricDelta"] { direction:ltr; justify-content:flex-end; font-size:0.85rem !important; }
 
-        .stTabs [data-baseweb="tab-list"] { flex-direction:row-reverse; gap:4px; }
-        .stTabs [data-baseweb="tab"] { padding:8px 14px; font-size:0.95rem; }
+.stButton button, .stDownloadButton button {
+width:100%; min-height:44px; border-radius:12px; font-weight:700;
+}
+input { min-height:44px !important; font-size:1rem !important; }
 
-        .card { background:#FFF; border:1px solid #E3DCCC; border-radius:12px;
-                padding:12px 14px; margin-bottom:8px; }
-        .card .top { display:flex; justify-content:space-between; align-items:baseline; }
-        .card .nm { font-weight:700; font-size:1rem; color:var(--ink); }
-        .card .cd { color:var(--muted); font-size:0.8rem; direction:ltr; }
-        .card .rw { display:flex; justify-content:space-between; font-size:0.85rem;
-                    color:var(--muted); margin-top:6px; }
-        .card .val { color:var(--ink); direction:ltr; }
-        .pl-up { color:var(--up); font-weight:700; direction:ltr; }
-        .pl-dn { color:var(--down); font-weight:700; direction:ltr; }
+.stTabs [data-baseweb="tab-list"] { flex-direction:row-reverse; gap:4px; }
+.stTabs [data-baseweb="tab"] { padding:8px 14px; font-size:0.95rem; }
 
-        .verdict { border-radius:12px; padding:12px 14px; font-weight:700;
-                   border:1px solid #E3DCCC; background:#FFF; font-size:1rem; }
-        .verdict small { font-weight:400; color:var(--muted); display:block;
-                         margin-top:6px; font-size:0.8rem; line-height:1.6; }
-        .note { font-size:0.78rem; color:var(--muted); border-top:1px dashed #D6CDB8;
-                padding-top:8px; margin-top:10px; line-height:1.7; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+.card { background:#FFF; border:1px solid #E3DCCC; border-radius:12px;
+padding:12px 14px; margin-bottom:8px; }
+.card .top { display:flex; justify-content:space-between; align-items:baseline; }
+.card .nm { font-weight:700; font-size:1rem; color:var(--ink); }
+.card .cd { color:var(--muted); font-size:0.8rem; direction:ltr; }
+.card .rw { display:flex; justify-content:space-between; font-size:0.85rem;
+color:var(--muted); margin-top:6px; }
+.card .val { color:var(--ink); direction:ltr; }
+.pl-up { color:var(--up); font-weight:700; direction:ltr; }
+.pl-dn { color:var(--down); font-weight:700; direction:ltr; }
 
+.verdict { border-radius:12px; padding:12px 14px; font-weight:700;
+border:1px solid #E3DCCC; background:#FFF; font-size:1rem; }
+.verdict small { font-weight:400; color:var(--muted); display:block;
+margin-top:6px; font-size:0.8rem; line-height:1.6; }
+.note { font-size:0.78rem; color:var(--muted); border-top:1px dashed #D6CDB8;
+padding-top:8px; margin-top:10px; line-height:1.7; }
+</style>
+"""
 
 PLOT_LAYOUT = dict(
     font=dict(family="Tajawal, sans-serif", size=12, color="#0E1B2C"),
@@ -157,6 +152,12 @@ PLOT_LAYOUT = dict(
     dragmode=False,
     legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
 )
+
+
+def html(markup: str) -> None:
+    """يعرض HTML بعد إزالة أي مسافات بادئة قد تجعل Markdown يعامله كنص."""
+    st.markdown(" ".join(line.strip() for line in markup.strip().splitlines()),
+                unsafe_allow_html=True)
 
 
 # ==========================================================
@@ -181,7 +182,6 @@ def fmt(x, d: int = 2, suffix: str = "", dash: str = "—") -> str:
 
 
 def money(x, dash: str = "—") -> str:
-    """اختصار الأرقام الكبيرة حتى لا تتكسر على شاشة الجوال."""
     if not is_num(x):
         return dash
     v = float(x)
@@ -421,10 +421,8 @@ def sidebar() -> str:
             st.download_button("تصدير", out.to_csv(index=False).encode("utf-8-sig"),
                                "portfolio.csv", "text/csv")
 
-    st.sidebar.markdown(
-        "<div class='note'>البيانات من Yahoo Finance و TradingView (غير رسمية) "
-        "وقد تكون ناقصة أو متأخرة. أداة متابعة — ليست توصية.</div>",
-        unsafe_allow_html=True)
+    st.sidebar.caption("البيانات من Yahoo Finance و TradingView (غير رسمية) وقد تكون "
+                       "ناقصة أو متأخرة. أداة متابعة — ليست توصية.")
     return interval
 
 
@@ -471,25 +469,22 @@ def section_overview(pf: pd.DataFrame) -> None:
 
     st.markdown("### أسهمي")
     for _, r in pf.iterrows():
-        cls = "pl-up" if (r["pl"] is not None and not pd.isna(r["pl"]) and r["pl"] >= 0) else "pl-dn"
-        pl_txt = (f"{r['pl']:+,.0f} ر.س ({r['pct']:+.1f}%)"
-                  if r["pl"] is not None and not pd.isna(r["pl"]) else "غير متاح")
-        st.markdown(
-            f"""<div class="card">
-              <div class="top">
-                <span class="nm">{r['name']}</span>
-                <span class="cd">{r['code']}</span>
-              </div>
-              <div class="rw"><span>السعر الحالي</span>
-                   <span class="val">{fmt(r['price'])} ر.س</span></div>
-              <div class="rw"><span>الشراء × الكمية</span>
-                   <span class="val">{r['buy']:,.2f} × {r['qty']:,.0f}</span></div>
-              <div class="rw"><span>القيمة</span>
-                   <span class="val">{money(r['value'])} ر.س</span></div>
-              <div class="rw"><span>الربح / الخسارة</span>
-                   <span class="{cls}">{pl_txt}</span></div>
-            </div>""",
-            unsafe_allow_html=True,
+        has_pl = r["pl"] is not None and not pd.isna(r["pl"])
+        cls = "pl-up" if (has_pl and r["pl"] >= 0) else "pl-dn"
+        pl_txt = f"{r['pl']:+,.0f} ر.س ({r['pct']:+.1f}%)" if has_pl else "غير متاح"
+        html(
+            f'<div class="card">'
+            f'<div class="top"><span class="nm">{r["name"]}</span>'
+            f'<span class="cd">{r["code"]}</span></div>'
+            f'<div class="rw"><span>السعر الحالي</span>'
+            f'<span class="val">{fmt(r["price"])} ر.س</span></div>'
+            f'<div class="rw"><span>الشراء × الكمية</span>'
+            f'<span class="val">{r["buy"]:,.2f} × {r["qty"]:,.0f}</span></div>'
+            f'<div class="rw"><span>القيمة</span>'
+            f'<span class="val">{money(r["value"])} ر.س</span></div>'
+            f'<div class="rw"><span>الربح / الخسارة</span>'
+            f'<span class="{cls}">{pl_txt}</span></div>'
+            f'</div>'
         )
         if st.button("حذف", key=f"del_{r['i']}_{r['code']}"):
             st.session_state.rows.pop(int(r["i"]))
@@ -528,12 +523,12 @@ def section_fundamentals(d: dict) -> None:
         k.metric("المكرر المتوقع", fmt(d.get("forward_pe")))
 
     verdict, color, reasons = fundamental_score(d)
-    st.markdown(
-        f"<div class='verdict' style='border-right:6px solid {color}; color:{color}'>"
-        f"التقييم: {verdict}"
-        f"<small>{' • '.join(reasons) if reasons else 'بيانات غير كافية'}</small>"
-        f"<small>نموذج نقاط إرشادي بعتبات ثابتة — ليس توصية.</small></div>",
-        unsafe_allow_html=True)
+    html(
+        f'<div class="verdict" style="border-right:6px solid {color}; color:{color}">'
+        f'التقييم: {verdict}'
+        f'<small>{" • ".join(reasons) if reasons else "بيانات غير كافية"}</small>'
+        f'<small>نموذج نقاط إرشادي بعتبات ثابتة — ليس توصية.</small></div>'
+    )
 
 
 def section_financials(code: str) -> None:
@@ -542,7 +537,8 @@ def section_financials(code: str) -> None:
     df = fetch_financials(code, quarterly=q)
 
     if df.empty or df[["الإيرادات", "صافي الربح"]].isna().all().all():
-        st.info("القوائم المالية غير متاحة لهذا الرمز عبر Yahoo Finance. راجع تقارير الشركة على موقع تداول.")
+        st.info("القوائم المالية غير متاحة لهذا الرمز عبر Yahoo Finance. "
+                "راجع تقارير الشركة على موقع تداول.")
         return
 
     fig = go.Figure()
@@ -555,14 +551,18 @@ def section_financials(code: str) -> None:
     g["نمو الإيرادات"] = g["الإيرادات"].pct_change() * 100
     g["نمو الأرباح"] = g["صافي الربح"].pct_change() * 100
     for _, r in g.iloc[::-1].iterrows():
-        st.markdown(
-            f"""<div class="card">
-              <div class="top"><span class="nm">{r['الفترة']}</span></div>
-              <div class="rw"><span>الإيرادات</span><span class="val">{money(r['الإيرادات'])}</span></div>
-              <div class="rw"><span>صافي الربح</span><span class="val">{money(r['صافي الربح'])}</span></div>
-              <div class="rw"><span>نمو الإيرادات / الأرباح</span>
-                <span class="val">{fmt(r['نمو الإيرادات'],1,'%')} / {fmt(r['نمو الأرباح'],1,'%')}</span></div>
-            </div>""", unsafe_allow_html=True)
+        html(
+            f'<div class="card">'
+            f'<div class="top"><span class="nm">{r["الفترة"]}</span></div>'
+            f'<div class="rw"><span>الإيرادات</span>'
+            f'<span class="val">{money(r["الإيرادات"])}</span></div>'
+            f'<div class="rw"><span>صافي الربح</span>'
+            f'<span class="val">{money(r["صافي الربح"])}</span></div>'
+            f'<div class="rw"><span>نمو الإيرادات / الأرباح</span>'
+            f'<span class="val">{fmt(r["نمو الإيرادات"],1,"%")} / '
+            f'{fmt(r["نمو الأرباح"],1,"%")}</span></div>'
+            f'</div>'
+        )
 
 
 def section_technical(code: str, interval: str) -> None:
@@ -574,11 +574,12 @@ def section_technical(code: str, interval: str) -> None:
 
     s = tv["summary"]
     label, color = TV_AR.get(s.get("RECOMMENDATION", "NEUTRAL"), ("—", "#7A8899"))
-    st.markdown(
-        f"<div class='verdict' style='border-right:6px solid {color}; color:{color}; font-size:1.15rem'>"
-        f"التوصية الفنية: {label}"
-        f"<small>شراء {s.get('BUY',0)} • حياد {s.get('NEUTRAL',0)} • بيع {s.get('SELL',0)}</small></div>",
-        unsafe_allow_html=True)
+    html(
+        f'<div class="verdict" style="border-right:6px solid {color}; color:{color}; font-size:1.15rem">'
+        f'التوصية الفنية: {label}'
+        f'<small>شراء {s.get("BUY", 0)} • حياد {s.get("NEUTRAL", 0)} • '
+        f'بيع {s.get("SELL", 0)}</small></div>'
+    )
 
     a, b = st.columns(2)
     a.metric("المذبذبات", TV_AR.get(tv.get("oscillators"), ("—", ""))[0])
@@ -602,13 +603,10 @@ def section_technical(code: str, interval: str) -> None:
     if picked:
         with st.expander("مؤشرات فنية"):
             for k, v in picked.items():
-                st.markdown(
-                    f"<div style='display:flex;justify-content:space-between;font-size:0.9rem'>"
-                    f"<span>{k}</span><span style='direction:ltr'>{fmt(v)}</span></div>",
-                    unsafe_allow_html=True)
+                html(f'<div style="display:flex;justify-content:space-between;font-size:0.9rem">'
+                     f'<span>{k}</span><span style="direction:ltr">{fmt(v)}</span></div>')
 
-    st.markdown("<div class='note'>التحليل الفني عنصر توقيت داعم فقط — القرار مبني على التحليل الأساسي.</div>",
-                unsafe_allow_html=True)
+    st.caption("التحليل الفني عنصر توقيت داعم فقط — القرار مبني على التحليل الأساسي.")
 
 
 # ==========================================================
@@ -616,7 +614,7 @@ def section_technical(code: str, interval: str) -> None:
 # ==========================================================
 
 def main() -> None:
-    inject_css()
+    st.markdown(CSS, unsafe_allow_html=True)
     st.title("محفظتي — تداول")
     st.caption(f"الجلسة: {datetime.now():%Y-%m-%d %H:%M} • اضغط » أعلى الشاشة لإضافة سهم")
 
